@@ -1,0 +1,26 @@
+# Build output
+/build/
+
+# CMake/Ninja
+*.cmake
+*.ninja*
+CMakeCache.txt
+compile_commands.json
+cmake_install.cmake
+
+# Prebuilt libraries
+deps/**/lib/*.lib
+deps/**/lib/*.dll
+deps/**/lib/*.pdb
+
+# OS / editor temp files
+*.log
+*.tmp
+*.bak
+*.swp
+Thumbs.db
+
+# Ruby
+.bundle
+/log/
+*.gem
