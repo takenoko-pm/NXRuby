@@ -1,4 +1,4 @@
-﻿#define SDL_MAIN_USE_CALLBACKS
+﻿#define SDL_MAIN_USE_CALLBACKS 1
 #include <mruby.h>
 #include <mruby/compile.h>
 #include <SDL3/SDL.h>
@@ -56,12 +56,14 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 
 // 4. アプリ終了時に呼ばれる後片付け
 void SDL_AppQuit(void *appstate, SDL_AppResult result) {
-    // ウィンドウとメモリの解放
+    // 各モジュールの片付け
     nx_window_cleanup();
     
+    // mrubyの終了
     if (mrb) {
         mrb_close(mrb);
         mrb = NULL;
     }
+
     SDL_Log("NXRuby App Quit.");
 }
