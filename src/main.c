@@ -21,15 +21,17 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     // この中で Window.loop が評価され、ブロックが記憶される
     FILE *fp = fopen("app.rb", "r");
     if (fp) {
-        SDL_Log("Loading app.rb...");
+        SDL_Log("NXRuby: Loading app.rb...");
         mrb_load_file(mrb, fp);
         fclose(fp);
     } else {
-        SDL_Log("Error: app.rb not found!");
+        SDL_Log("NXRuby Error: app.rb not found!");
+        return SDL_APP_FAILURE;
     }
 
     // 構文エラーなどがあればアプリ終了
     if (mrb->exc) {
+        SDL_Log("NXRuby Error: Ruby script execution failed.");
         mrb_print_error(mrb);
         return SDL_APP_FAILURE;
     }
