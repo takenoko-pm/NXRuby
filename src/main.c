@@ -3,8 +3,8 @@
 #include <mruby/compile.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
-#include "system.h"
 #include "window.h"
+#include "input.h"
 
 static mrb_state *mrb = NULL;
 
@@ -14,8 +14,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     if (!mrb) return SDL_APP_FAILURE;
 
     // APIの登録
-    nx_system_init(mrb);
     nx_window_init(mrb);
+    nx_input_init(mrb);
 
     // app.rb をロードする
     // この中で Window.loop が評価され、ブロックが記憶される

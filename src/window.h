@@ -8,7 +8,7 @@ void nx_window_init(mrb_state *mrb);
 bool nx_window_tick(void);
 void nx_window_cleanup(void);
 
-// 各関数のプロトタイプ宣言
+// mruby 用関数のプロトタイプ宣言
 mrb_value nx_window_loop(mrb_state *mrb, mrb_value self);
 mrb_value nx_window_close(mrb_state *mrb, mrb_value self);
 

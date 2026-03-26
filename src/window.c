@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include "window.h"
+#include "input.h"
 
 // windowモジュールAPIを実装する
 
@@ -37,7 +38,7 @@ typedef struct {
 static DrawCmd draw_queue[MAX_DRAW_CMDS];
 static int draw_cmd_count = 0;
 
-// ウィンドウの状態を管理する構造体
+// ウィンドウ状態を管理する構造体
 typedef struct {
     bool          is_ready;
     SDL_Window   *window;
@@ -142,7 +143,7 @@ static const struct nx_method_table {
     {NULL, NULL, 0} 
 };
 
-// 登録処理
+// --- モジュール登録・初期化 ---
 // MRB_ARGS_REQ()内の数字は引数の数
 void nx_window_init(mrb_state *mrb) {
     struct RClass *Window = mrb_define_module(mrb, "Window");
@@ -364,7 +365,9 @@ bool nx_window_tick(void) {
     }
 
     Uint64 now_ns = SDL_GetTicksNS();
+    
     nx_window_update_fps(now_ns);
+    nx_input_poll();
 
     if (window_state.target_fps > 0) {
         // 通常の固定FPSモード
@@ -378,6 +381,7 @@ bool nx_window_tick(void) {
         window_state.lag_ns += frame_time;
 
         while (window_state.lag_ns >= target_ns) {
+            nx_input_update();
             if (!nx_window_call_ruby_block()) return false;
             window_state.lag_ns -= target_ns;
         }
@@ -385,6 +389,7 @@ bool nx_window_tick(void) {
         // fps = 0 (無制限モード) の場合は、毎回必ず1回だけ処理を回す
         window_state.last_ns = now_ns;
         window_state.lag_ns = 0;
+        nx_input_update();
         if (!nx_window_call_ruby_block()) return false;
     }
     

@@ -12,8 +12,8 @@ set(SDL3_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/deps/SDL3")
 # 実行ファイルの設定
 add_executable(nxruby 
     src/main.c
-    src/system.c
     src/window.c
+    src/input.c
 )
 
 # インクルードパスの設定
