@@ -7,7 +7,9 @@
 ## 特徴(目標)
 - mrubyでスクリプトを書ける
 - SDL3によるモダンなレンダリング
+- Windows/Linux/Macサポート
 - WASM対応によるブラウザゲームサポート
+(現在はWindowsでしかビルドできません)
 
 ## 参考
 - [DXRuby(github)](https://github.com/mirichi/dxruby)
