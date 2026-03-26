@@ -1,19 +1,14 @@
 # NXRuby
 2DゲームライブラリであるDXRubyのAPIを参考にSDL3で作成したゲームライブラリです。
 
-A DXRuby-like 2D Game Engine powered by mruby and SDL3.
-
-## Status
+## 状況
 開発中
 
-Experimental / Under Development
-
-## Features
+## 特徴
 - mrubyでスクリプトを書ける
 - SDL3によるモダンなレンダリング
 - WASM対応によるブラウザゲームサポート
 
-
-- mruby for scripting
-- SDL3 for high-performance rendering
-- WebAssembly (WASM) ready architecture
+## 参考
+- [DXRuby(github)](https://github.com/mirichi/dxruby)
+- [DXRuby(リファレンス)](https://mirichi.github.io/dxruby-doc/index.html)
