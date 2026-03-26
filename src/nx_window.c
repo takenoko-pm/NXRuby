@@ -5,8 +5,8 @@
 #include <SDL3/SDL.h>
 #include <stdlib.h>
 #include <math.h>
-#include "window.h"
-#include "input.h"
+#include "nx_window.h"
+#include "nx_input.h"
 
 // windowモジュールAPIを実装する
 

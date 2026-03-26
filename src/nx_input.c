@@ -1,23 +1,29 @@
 ﻿#include <mruby.h>
 #include <SDL3/SDL.h>
-#include "input.h"
+#include "nx_input.h"
 
-// 入力状態を管理する構造体
+// ============================================================================
+// [Data] 内部状態と定数テーブル
+// ============================================================================
+
+// --- 入力状態を管理する構造体 ---
 typedef struct {
     // SDLからの生データ
-    bool   raw_keys[SDL_SCANCODE_COUNT];
+    Uint8  raw_keys[SDL_SCANCODE_COUNT];
     float  raw_mouse_x;
     float  raw_mouse_y;
     Uint32 raw_mouse_btn;
 
-    bool   current_keys[SDL_SCANCODE_COUNT];
-    bool   prev_keys[SDL_SCANCODE_COUNT];
+    // キーボード入力用
+    Uint8  current_keys[SDL_SCANCODE_COUNT];
+    Uint8  prev_keys[SDL_SCANCODE_COUNT];
 
     // オートリピート用の配列
     int    key_count[SDL_SCANCODE_COUNT];    // 何フレーム押され続けているか
     int    key_wait[SDL_SCANCODE_COUNT];     // リピート開始までのフレーム数
     int    key_interval[SDL_SCANCODE_COUNT]; // リピート間隔フレーム数
 
+    // マウス入力用
     float  mouse_x;
     float  mouse_y;
     Uint32 current_mouse_btn;
@@ -27,7 +33,7 @@ typedef struct {
 // 実体の宣言
 static InputState input_state;
 
-// キーの名前とスキャンコードをペアにする構造体
+// --- キーの名前とスキャンコードの構造体 ---
 typedef struct {
     const char   *name;
     SDL_Scancode  code;
@@ -88,7 +94,10 @@ void nx_input_init(mrb_state *mrb) {
     }
 }
 
-// --- 更新処理 ---
+// ============================================================================
+// ■ 更新処理
+// ============================================================================
+
 // --- SDLから物理的な最新状態を取得 ---
 void nx_input_poll(void) {
     int numkeys;
@@ -96,17 +105,17 @@ void nx_input_poll(void) {
     if (numkeys > SDL_SCANCODE_COUNT) numkeys = SDL_SCANCODE_COUNT;
     
     // 生データ(raw)として保存するだけ
-    memcpy(input_state.raw_keys, state, numkeys * sizeof(bool));
+    memcpy(input_state.raw_keys, state, numkeys * sizeof(input_state.raw_keys[0]));
     input_state.raw_mouse_btn = SDL_GetMouseState(&input_state.raw_mouse_x, &input_state.raw_mouse_y);
 }
 
 // --- 論理フレームの更新 ---
 void nx_input_update(void) {
-    // 1. 現在のキー状態を「過去」にコピー
+    // 1. 現在のキー状態を「過去(prev)」にコピー
     memcpy(input_state.prev_keys, input_state.current_keys, sizeof(input_state.current_keys));
     input_state.prev_mouse_btn = input_state.current_mouse_btn;
 
-    // 2. 「生データ(raw)」を「現在(current)」に反映する
+    // 2. 「生データ(raw)」を「現在(current)」に反映
     memcpy(input_state.current_keys, input_state.raw_keys, sizeof(input_state.raw_keys));
     input_state.current_mouse_btn = input_state.raw_mouse_btn;
     input_state.mouse_x = input_state.raw_mouse_x;
@@ -122,7 +131,11 @@ void nx_input_update(void) {
     }
 }
 
-// --- キーボード ---
+// ============================================================================
+// ■ キーボード入力API
+// ============================================================================
+
+// --- オートリピートモードに変更 ---
 mrb_value nx_input_set_repeat(mrb_state *mrb, mrb_value self) {
     mrb_int wait, interval;
     mrb_get_args(mrb, "ii", &wait, &interval);
@@ -134,6 +147,8 @@ mrb_value nx_input_set_repeat(mrb_state *mrb, mrb_value self) {
     return mrb_nil_value();
 }
 
+// --- カーソルキーの入力をX座標で返す ---
+// 返り値は増分(-1, 0, 1)
 mrb_value nx_input_x(mrb_state *mrb, mrb_value self) {
     int x = 0;
     if (input_state.current_keys[SDL_SCANCODE_RIGHT]) x += 1;
@@ -141,6 +156,8 @@ mrb_value nx_input_x(mrb_state *mrb, mrb_value self) {
     return mrb_int_value(mrb, x);
 }
 
+// --- カーソルキーの入力をy座標で返す ---
+// 返り値は増分(-1, 0, 1)
 mrb_value nx_input_y(mrb_state *mrb, mrb_value self) {
     int y = 0;
     if (input_state.current_keys[SDL_SCANCODE_DOWN]) y += 1;
@@ -148,6 +165,8 @@ mrb_value nx_input_y(mrb_state *mrb, mrb_value self) {
     return mrb_int_value(mrb, y);
 }
 
+// --- 押し込み判定 ---
+// キーが押されているあいだ真を返す
 mrb_value nx_input_key_down(mrb_state *mrb, mrb_value self) {
     mrb_int key;
     mrb_get_args(mrb, "i", &key);
@@ -155,6 +174,8 @@ mrb_value nx_input_key_down(mrb_state *mrb, mrb_value self) {
     return mrb_bool_value(input_state.current_keys[key]);
 }
 
+// --- 押し込み判定 ---
+// キーが押された瞬間真を返す
 mrb_value nx_input_key_push(mrb_state *mrb, mrb_value self) {
     mrb_int key;
     mrb_get_args(mrb, "i", &key);
@@ -177,19 +198,26 @@ mrb_value nx_input_key_push(mrb_state *mrb, mrb_value self) {
     return mrb_false_value();
 }
 
-// --- マウス ---
+// ============================================================================
+// ■ マウス入力API
+// ============================================================================
+
+// マウスのX座標を返す
 mrb_value nx_input_mouse_x(mrb_state *mrb, mrb_value self) {
     return mrb_float_value(mrb, input_state.mouse_x);
 }
 
+// マウスのy座標を返す
 mrb_value nx_input_mouse_y(mrb_state *mrb, mrb_value self) {
     return mrb_float_value(mrb, input_state.mouse_y);
 }
 
+// マウスのボタンが押されているあいだ真を返す
 mrb_value nx_input_mouse_down(mrb_state *mrb, mrb_value self) {
     return mrb_bool_value((input_state.current_mouse_btn & SDL_BUTTON_LMASK) != 0);
 }
 
+// マウスのボタンが押されてた瞬間真を返す
 mrb_value nx_input_mouse_push(mrb_state *mrb, mrb_value self) {
     bool current = (input_state.current_mouse_btn & SDL_BUTTON_LMASK) != 0;
     bool prev    = (input_state.prev_mouse_btn & SDL_BUTTON_LMASK) != 0;
