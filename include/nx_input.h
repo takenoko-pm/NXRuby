@@ -14,8 +14,10 @@ mrb_value nx_input_x(mrb_state *mrb, mrb_value self);
 mrb_value nx_input_y(mrb_state *mrb, mrb_value self);
 mrb_value nx_input_key_down(mrb_state *mrb, mrb_value self);
 mrb_value nx_input_key_push(mrb_state *mrb, mrb_value self);
+mrb_value nx_input_key_release(mrb_state *mrb, mrb_value self);
 
 mrb_value nx_input_mouse_x(mrb_state *mrb, mrb_value self);
 mrb_value nx_input_mouse_y(mrb_state *mrb, mrb_value self);
 mrb_value nx_input_mouse_down(mrb_state *mrb, mrb_value self);
 mrb_value nx_input_mouse_push(mrb_state *mrb, mrb_value self);
+mrb_value nx_input_mouse_release(mrb_state *mrb, mrb_value self);
