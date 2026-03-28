@@ -1,4 +1,4 @@
-NXRuby
+# NXRuby
 2DゲームライブラリであるDXRubyのAPIを参考にSDL3で作成したゲームライブラリです。
 
 ## 状況
