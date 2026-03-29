@@ -1,4 +1,4 @@
-﻿#include <mruby.h>
+#include <mruby.h>
 #include <mruby/data.h>
 #include <mruby/class.h>
 #include <mruby/array.h>
@@ -49,6 +49,66 @@ NxImage* nx_image_get_data(mrb_state *mrb, mrb_value image_obj) {
 // ================================================================================
 // [3] RubyAPI: Imageクラスの実装
 // ================================================================================
+
+// --- Image#initialize (Image.new(w, h, color) 用) ---
+static mrb_value nx_image_initialize(mrb_state *mrb, mrb_value self) {
+    mrb_int w, h;
+    mrb_value color_ary = mrb_nil_value();
+    // 第3引数の配列は省略可能
+    mrb_get_args(mrb, "ii|A", &w, &h, &color_ary);
+
+    if (w <= 0 || h <= 0) mrb_raise(mrb, E_ARGUMENT_ERROR, "Width and height must be > 0");
+
+    Uint8 r = 0, g = 0, b = 0, a = 0; // 色省略時は透明(アルファ0)
+    if (!mrb_nil_p(color_ary) && mrb_array_p(color_ary)) {
+        mrb_int len = RARRAY_LEN(color_ary);
+        if (len >= 3) {
+            r = (Uint8)mrb_fixnum(mrb_ary_ref(mrb, color_ary, 0));
+            g = (Uint8)mrb_fixnum(mrb_ary_ref(mrb, color_ary, 1));
+            b = (Uint8)mrb_fixnum(mrb_ary_ref(mrb, color_ary, 2));
+            a = 255; // RGB指定なら不透明
+            if (len >= 4) {
+                a = (Uint8)mrb_fixnum(mrb_ary_ref(mrb, color_ary, 3));
+            }
+        }
+    }
+
+    SDL_Renderer *renderer = nx_window_get_renderer();
+    if (!renderer) mrb_raise(mrb, E_RUNTIME_ERROR, "Renderer is not initialized.");
+
+    // ベタ塗り用のテクスチャを生成
+    SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, (int)w, (int)h);
+    if (!texture) mrb_raisef(mrb, E_RUNTIME_ERROR, "Failed to create texture: %s", SDL_GetError());
+    SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+
+    // ピクセルデータを生成して色を流し込む
+    size_t pixel_count = (size_t)(w * h);
+    Uint8 *pixels = mrb_malloc(mrb, pixel_count * 4);
+    for (size_t i = 0; i < pixel_count; i++) {
+        pixels[i * 4 + 0] = r;
+        pixels[i * 4 + 1] = g;
+        pixels[i * 4 + 2] = b;
+        pixels[i * 4 + 3] = a;
+    }
+    SDL_UpdateTexture(texture, NULL, pixels, (int)w * 4);
+    mrb_free(mrb, pixels);
+
+    // 構造体にセット
+    NxSharedTexture *shared = mrb_malloc(mrb, sizeof(NxSharedTexture));
+    shared->texture = texture;
+    shared->ref_count = 1;
+
+    NxImage *img = mrb_malloc(mrb, sizeof(NxImage));
+    img->shared_tex = shared;
+    img->src_rect = (SDL_FRect){0, 0, (float)w, (float)h};
+    img->width = (float)w;
+    img->height = (float)h;
+
+    DATA_PTR(self) = img;
+    DATA_TYPE(self) = &nx_image_type;
+
+    return self;
+}
 
 // --- Image.load ---
 static mrb_value nx_image_load(mrb_state *mrb, mrb_value self) {
@@ -179,34 +239,40 @@ static mrb_value nx_image_is_disposed(mrb_state *mrb, mrb_value self) {
 // [4] 初期化とメソッド登録
 // ================================================================================
 
-// 登録用テーブル
+// クラスメソッド用テーブル (Image.load など)
 static const struct nx_method_table {
     const char *name;
     mrb_func_t  func;
     mrb_aspec   aspec;
-} image_methods[] = {
-    {"load"            , nx_image_load             , MRB_ARGS_REQ(1)},
-    {"load_tiles"      , nx_image_load_tiles       , MRB_ARGS_REQ(3)},
-    {"slice"           , nx_image_slice            , MRB_ARGS_REQ(4)},
-    {"width"           , nx_image_width            , MRB_ARGS_NONE()},
-    {"height"          , nx_image_height           , MRB_ARGS_NONE()},
-    {"dispose"         , nx_image_dispose          , MRB_ARGS_NONE()},
-    {"disposed?"       , nx_image_is_disposed      , MRB_ARGS_NONE()},
+} image_class_methods[] = {
+    {"load"       , nx_image_load       , MRB_ARGS_REQ(1)},
+    {"load_tiles" , nx_image_load_tiles , MRB_ARGS_REQ(3)},
+    {NULL, NULL, 0} 
+};
 
-    // 終端マーク
+// インスタンスメソッド用テーブル (img.width や Image.new の実体化など)
+static const struct nx_method_table image_instance_methods[] = {
+    {"initialize" , nx_image_initialize , MRB_ARGS_ARG(2, 1)},
+    {"slice"      , nx_image_slice      , MRB_ARGS_REQ(4)},
+    {"width"      , nx_image_width      , MRB_ARGS_NONE()},
+    {"height"     , nx_image_height     , MRB_ARGS_NONE()},
+    {"dispose"    , nx_image_dispose    , MRB_ARGS_NONE()},
+    {"disposed?"  , nx_image_is_disposed, MRB_ARGS_NONE()},
     {NULL, NULL, 0} 
 };
 
 // Imageクラスの初期化
 void nx_image_init(mrb_state *mrb) {
-    // class Image を定義 (Objectクラスを継承)
     struct RClass *Image = mrb_define_class(mrb, "Image", mrb->object_class);
-    
-    // このクラスのインスタンスがC言語の構造体(ポインタ)を持つことを宣言
     MRB_SET_INSTANCE_TT(Image, MRB_TT_DATA);
 
-    // メソッドの登録
-    for (int i = 0; image_methods[i].name; i++) {
-        mrb_define_class_method(mrb, Image, image_methods[i].name, image_methods[i].func, image_methods[i].aspec);
+    // クラスメソッドの登録
+    for (int i = 0; image_class_methods[i].name; i++) {
+        mrb_define_class_method(mrb, Image, image_class_methods[i].name, image_class_methods[i].func, image_class_methods[i].aspec);
+    }
+
+    // インスタンスメソッドの登録
+    for (int i = 0; image_instance_methods[i].name; i++) {
+        mrb_define_method(mrb, Image, image_instance_methods[i].name, image_instance_methods[i].func, image_instance_methods[i].aspec);
     }
 }

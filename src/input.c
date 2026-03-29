@@ -1,4 +1,4 @@
-﻿#include <mruby.h>
+#include <mruby.h>
 #include <SDL3/SDL.h>
 #include <stdbool.h>
 #include <string.h>
@@ -22,7 +22,6 @@ typedef struct {
     Uint8  prev_keys[SDL_SCANCODE_COUNT];
     // イベントフラグ
     Uint8  pressed[SDL_SCANCODE_COUNT]; 
-
     // オートリピート用の配列
     int    key_count[SDL_SCANCODE_COUNT];    // 何フレーム押され続けているか
     int    key_wait[SDL_SCANCODE_COUNT];     // リピート開始までのフレーム数
@@ -36,6 +35,18 @@ typedef struct {
     Uint32 prev_mouse_btn;
     // イベントフラグ
     Uint32 pressed_mouse_btn; 
+
+    // ゲームパッド管理用
+    SDL_Gamepad    *gamepad;
+    SDL_JoystickID gamepad_id;
+    Uint8  current_pad_btns[SDL_GAMEPAD_BUTTON_COUNT];
+    Uint8  prev_pad_btns[SDL_GAMEPAD_BUTTON_COUNT];
+    Uint8  pressed_pad_btns[SDL_GAMEPAD_BUTTON_COUNT];
+    // オートリピート用の配列
+    int    pad_count[SDL_GAMEPAD_BUTTON_COUNT];        // 何フレーム押され続けているか
+    int    pad_wait[SDL_GAMEPAD_BUTTON_COUNT];         // リピート開始までのフレーム数
+    int    pad_interval[SDL_GAMEPAD_BUTTON_COUNT];     // リピート間隔フレーム数
+
 } InputState;
 
 // 実体の宣言
@@ -80,6 +91,31 @@ void nx_input_handle_event(const SDL_Event *event) {
         case SDL_EVENT_MOUSE_BUTTON_UP:
             input_state.raw_mouse_btn = SDL_GetMouseState(NULL, NULL);
             break;
+        // ゲームパッド: 接続
+        case SDL_EVENT_GAMEPAD_ADDED:
+            if (!input_state.gamepad) {
+                input_state.gamepad = SDL_OpenGamepad(event->gdevice.which);
+                if (input_state.gamepad) {
+                    input_state.gamepad_id = SDL_GetGamepadID(input_state.gamepad);
+                    SDL_Log("[NXRuby] Gamepad connected: %s", SDL_GetGamepadName(input_state.gamepad));
+                }
+            }
+            break;
+        // ゲームパッド: 切断
+        case SDL_EVENT_GAMEPAD_REMOVED:
+            if (input_state.gamepad && event->gdevice.which == input_state.gamepad_id) {
+                SDL_Log("[NXRuby] Gamepad disconnected.");
+                SDL_CloseGamepad(input_state.gamepad);
+                input_state.gamepad = NULL;
+                input_state.gamepad_id = 0;
+            }
+            break;
+        // ゲームパッド: ボタンが押された瞬間をキャッチ (高速入力対応)
+        case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+            if (event->gbutton.button < SDL_GAMEPAD_BUTTON_COUNT) {
+                input_state.pressed_pad_btns[event->gbutton.button] = 1;
+            }
+            break;
     }
 }
 
@@ -105,6 +141,27 @@ void nx_input_update(void) {
         input_state.pressed[i] = 0;
     }
 
+    // ゲームパッドボタンの更新
+    if (input_state.gamepad) {
+        for (int i = 0; i < SDL_GAMEPAD_BUTTON_COUNT; i++) {
+            // 今物理的に押されているか取得
+            Uint8 raw = SDL_GetGamepadButton(input_state.gamepad, (SDL_GamepadButton)i) ? 1 : 0;
+            
+            // 物理押し OR フレーム間の瞬間押し
+            input_state.current_pad_btns[i] = raw | input_state.pressed_pad_btns[i];
+
+            // 押されていればカウントアップ、離されたらリセット
+            if (input_state.current_pad_btns[i]) {
+                input_state.pad_count[i]++;
+            } else {
+                input_state.pad_count[i] = 0;
+            }
+
+            // フラグの掃除
+            input_state.pressed_pad_btns[i] = 0;
+        }
+    }
+
     // マウスの状態を決定（今物理的に押されているか、このフレームで一瞬でも押されたらON）
     input_state.current_mouse_btn = input_state.raw_mouse_btn | input_state.pressed_mouse_btn;
     input_state.mouse_x = input_state.raw_mouse_x;
@@ -115,7 +172,22 @@ void nx_input_update(void) {
 }
 
 // ================================================================================
-// [3] Ruby API: キーボード入力
+// [3] ヘルパー関数
+// ================================================================================
+
+// アナログスティックの値を -1.0 〜 1.0 に丸めて取得（デッドゾーン設定付き）
+static float nx_get_pad_axis(SDL_GamepadAxis axis) {
+    if (!input_state.gamepad) return 0.0f;
+    Sint16 val = SDL_GetGamepadAxis(input_state.gamepad, axis);
+    
+    // 約24%のデッドゾーン（これがないと指を離していても勝手にキャラが動く「ドリフト現象」が起きます）
+    if (val > -8000 && val < 8000) return 0.0f;
+    
+    return (float)val / 32767.0f;
+}
+
+// ================================================================================
+// [4] Ruby API: キーボード入力 ＆ パッド統合入力
 // ================================================================================
 
 // オートリピートモードに変更
@@ -127,25 +199,68 @@ static mrb_value nx_input_set_repeat(mrb_state *mrb, mrb_value self) {
         input_state.key_wait[i] = (int)wait;
         input_state.key_interval[i] = (int)interval;
     }
+
+    for (int i = 0; i < SDL_GAMEPAD_BUTTON_COUNT; i++) {
+        input_state.pad_wait[i] = (int)wait;
+        input_state.pad_interval[i] = (int)interval;
+    }
+
     return mrb_nil_value();
 }
 
-// カーソルキーの入力をX座標で返す(-1, 0, 1)
+// カーソルキー/パッドの入力をX座標で返す(-1, 0, 1)
 static mrb_value nx_input_x(mrb_state *mrb, mrb_value self) {
-    int x = 0;
-    if (input_state.current_keys[SDL_SCANCODE_RIGHT]) x += 1;
-    if (input_state.current_keys[SDL_SCANCODE_LEFT])  x -= 1;
-    return mrb_int_value(mrb, x);
+    float x = 0.0f;
+    
+    // 1. キーボード
+    if (input_state.current_keys[SDL_SCANCODE_RIGHT]) x += 1.0f;
+    if (input_state.current_keys[SDL_SCANCODE_LEFT])  x -= 1.0f;
+
+    // 2. ゲームパッド
+    if (input_state.gamepad) {
+        if (SDL_GetGamepadButton(input_state.gamepad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) x += 1.0f;
+        if (SDL_GetGamepadButton(input_state.gamepad, SDL_GAMEPAD_BUTTON_DPAD_LEFT))  x -= 1.0f;
+
+        Sint16 axis = SDL_GetGamepadAxis(input_state.gamepad, SDL_GAMEPAD_AXIS_LEFTX);
+        if (axis < -8000 || axis > 8000) {
+            x += (float)axis / 32767.0f;
+        }
+    }
+
+    // クランプ処理
+    if (x < -1.0f) x = -1.0f;
+    if (x > 1.0f)  x = 1.0f;
+
+    return mrb_float_value(mrb, x);
 }
 
-// カーソルキーの入力をy座標で返す(-1, 0, 1)
+// カーソルキー/パッドの入力をy座標で返す(-1, 0, 1)
 static mrb_value nx_input_y(mrb_state *mrb, mrb_value self) {
-    int y = 0;
-    if (input_state.current_keys[SDL_SCANCODE_DOWN]) y += 1;
-    if (input_state.current_keys[SDL_SCANCODE_UP])   y -= 1;
-    return mrb_int_value(mrb, y);
+    float y = 0.0f;
+    
+    // 1. キーボード
+    if (input_state.current_keys[SDL_SCANCODE_DOWN]) y += 1.0f;
+    if (input_state.current_keys[SDL_SCANCODE_UP])   y -= 1.0f;
+
+    // 2. ゲームパッド (★追加)
+    if (input_state.gamepad) {
+        if (SDL_GetGamepadButton(input_state.gamepad, SDL_GAMEPAD_BUTTON_DPAD_DOWN)) y += 1.0f;
+        if (SDL_GetGamepadButton(input_state.gamepad, SDL_GAMEPAD_BUTTON_DPAD_UP))   y -= 1.0f;
+
+        Sint16 axis = SDL_GetGamepadAxis(input_state.gamepad, SDL_GAMEPAD_AXIS_LEFTY);
+        if (axis < -8000 || axis > 8000) {
+            y += (float)axis / 32767.0f;
+        }
+    }
+
+    // クランプ処理
+    if (y < -1.0f) y = -1.0f;
+    if (y > 1.0f)  y = 1.0f;
+
+    return mrb_float_value(mrb, y);
 }
 
+// --- キーボード判定 ---
 // キーが押されているあいだ真を返す
 static mrb_value nx_input_key_down(mrb_state *mrb, mrb_value self) {
     mrb_int key;
@@ -186,8 +301,51 @@ static mrb_value nx_input_key_release(mrb_state *mrb, mrb_value self) {
     return mrb_bool_value(!input_state.current_keys[key] && input_state.prev_keys[key]);
 }
 
+// --- ゲームパッド判定 ---
+// キーが押されているあいだ真を返す
+static mrb_value nx_input_pad_down(mrb_state *mrb, mrb_value self) {
+    mrb_int btn; mrb_get_args(mrb, "i", &btn);
+    if (!input_state.gamepad || btn < 0 || btn >= SDL_GAMEPAD_BUTTON_COUNT) return mrb_false_value();
+    return mrb_bool_value(input_state.current_pad_btns[btn]);
+}
+
+// パッドが押された瞬間真を返す（オートリピート対応）
+static mrb_value nx_input_pad_push(mrb_state *mrb, mrb_value self) {
+    mrb_int btn; mrb_get_args(mrb, "i", &btn);
+    if (!input_state.gamepad || btn < 0 || btn >= SDL_GAMEPAD_BUTTON_COUNT) return mrb_false_value();
+
+    int count = input_state.pad_count[btn];
+    int wait = input_state.pad_wait[btn];
+    int interval = input_state.pad_interval[btn];
+
+    // 押した最初の1フレーム目は true
+    if (count == 1) return mrb_true_value();
+
+    // オートリピート判定
+    if (wait > 0 && interval > 0 && count > wait) {
+        if ((count - wait) % interval == 1) { 
+            return mrb_true_value(); 
+        }
+    }
+
+    return mrb_false_value();
+}
+
+// パッドが離された瞬間真を返す
+static mrb_value nx_input_pad_release(mrb_state *mrb, mrb_value self) {
+    mrb_int btn; mrb_get_args(mrb, "i", &btn);
+    if (!input_state.gamepad || btn < 0 || btn >= SDL_GAMEPAD_BUTTON_COUNT) return mrb_false_value();
+    return mrb_bool_value(!input_state.current_pad_btns[btn] && input_state.prev_pad_btns[btn]);
+}
+
+// --- アナログスティック ---
+static mrb_value nx_input_pad_lx(mrb_state *mrb, mrb_value self) { return mrb_float_value(mrb, nx_get_pad_axis(SDL_GAMEPAD_AXIS_LEFTX)); }
+static mrb_value nx_input_pad_ly(mrb_state *mrb, mrb_value self) { return mrb_float_value(mrb, nx_get_pad_axis(SDL_GAMEPAD_AXIS_LEFTY)); }
+static mrb_value nx_input_pad_rx(mrb_state *mrb, mrb_value self) { return mrb_float_value(mrb, nx_get_pad_axis(SDL_GAMEPAD_AXIS_RIGHTX)); }
+static mrb_value nx_input_pad_ry(mrb_state *mrb, mrb_value self) { return mrb_float_value(mrb, nx_get_pad_axis(SDL_GAMEPAD_AXIS_RIGHTY)); }
+
 // ================================================================================
-// [4] Ruby API: マウス入力
+// [5] Ruby API: マウス入力
 // ================================================================================
 
 // マウスカーソルの表示/非表示を切り替える
@@ -287,7 +445,7 @@ static mrb_value nx_input_mouse_release(mrb_state *mrb, mrb_value self) {
 }
 
 // ================================================================================
-// [5] キーコード設定
+// [6] 定数テーブル (キーボード ＆ パッド)
 // ================================================================================
 
 typedef struct {
@@ -361,6 +519,26 @@ static const KeyTable key_table[] = {
     {NULL, 0}
 };
 
+typedef struct {
+    const char *name;
+    SDL_GamepadButton code;
+} PadTable;
+
+// ゲームパッドのボタン定数テーブル
+static const PadTable pad_table[] = {
+    {"PAD_A", SDL_GAMEPAD_BUTTON_SOUTH},
+    {"PAD_B", SDL_GAMEPAD_BUTTON_EAST},
+    {"PAD_X", SDL_GAMEPAD_BUTTON_WEST},
+    {"PAD_Y", SDL_GAMEPAD_BUTTON_NORTH},
+    {"PAD_L1", SDL_GAMEPAD_BUTTON_LEFT_SHOULDER},
+    {"PAD_R1", SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER},
+    {"PAD_UP", SDL_GAMEPAD_BUTTON_DPAD_UP},
+    {"PAD_DOWN", SDL_GAMEPAD_BUTTON_DPAD_DOWN},
+    {"PAD_LEFT", SDL_GAMEPAD_BUTTON_DPAD_LEFT},
+    {"PAD_RIGHT", SDL_GAMEPAD_BUTTON_DPAD_RIGHT},
+    {NULL, 0}
+};
+
 // ================================================================================
 // [6] 初期化とメソッド登録
 // ================================================================================
@@ -374,9 +552,22 @@ static const struct nx_method_table {
     {"set_repeat"      , nx_input_set_repeat         , MRB_ARGS_REQ(2)},
     {"x"               , nx_input_x                  , MRB_ARGS_NONE()},
     {"y"               , nx_input_y                  , MRB_ARGS_NONE()},
+    
+    // キーボード
     {"key_down?"       , nx_input_key_down           , MRB_ARGS_REQ(1)},
     {"key_push?"       , nx_input_key_push           , MRB_ARGS_REQ(1)},
     {"key_release?"    , nx_input_key_release        , MRB_ARGS_REQ(1)},
+    
+    // ゲームパッド
+    {"pad_down?"       , nx_input_pad_down           , MRB_ARGS_REQ(1)},
+    {"pad_push?"       , nx_input_pad_push           , MRB_ARGS_REQ(1)},
+    {"pad_release?"    , nx_input_pad_release        , MRB_ARGS_REQ(1)},
+    {"pad_lx"          , nx_input_pad_lx             , MRB_ARGS_NONE()},
+    {"pad_ly"          , nx_input_pad_ly             , MRB_ARGS_NONE()},
+    {"pad_rx"          , nx_input_pad_rx             , MRB_ARGS_NONE()},
+    {"pad_ry"          , nx_input_pad_ry             , MRB_ARGS_NONE()},
+
+    // マウス
     {"mouse_enable="   , nx_input_set_mouse_enable   , MRB_ARGS_REQ(1)},
     {"set_mouse_pos"   , nx_input_set_mouse_pos      , MRB_ARGS_REQ(2)},
     {"mouse_x"         , nx_input_mouse_x            , MRB_ARGS_NONE()},
@@ -393,12 +584,17 @@ static const struct nx_method_table {
 
 // Inputメソッドの初期化
 void nx_input_init(mrb_state *mrb) {
+    // ゲームパッドサブシステムの初期化
+    SDL_InitSubSystem(SDL_INIT_GAMEPAD);
+
     struct RClass *Input = mrb_define_module(mrb, "Input");
 
     // オートリピートの設定を明示的に 0 (無効) で初期化
     for (int i = 0; i < SDL_SCANCODE_COUNT; i++) {
         input_state.key_wait[i] = 0;
         input_state.key_interval[i] = 0;
+        input_state.pad_wait[i] = 0;
+        input_state.pad_interval[i] = 0;
     }
 
     // マウスボタン定数の登録
@@ -409,6 +605,11 @@ void nx_input_init(mrb_state *mrb) {
     // キーコードの登録
     for (int i = 0; key_table[i].name != NULL; i++) {
         mrb_define_const(mrb, Input, key_table[i].name, mrb_int_value(mrb, key_table[i].code));
+    }
+
+    // パッド定数の登録
+    for (int i = 0; pad_table[i].name != NULL; i++) {
+        mrb_define_const(mrb, Input, pad_table[i].name, mrb_int_value(mrb, pad_table[i].code));
     }
 
     // メソッドの登録

@@ -1,4 +1,4 @@
-﻿#include <mruby.h>
+#include <mruby.h>
 #include <mruby/compile.h>
 #include <mruby/array.h>
 #include <mruby/hash.h>
@@ -10,6 +10,7 @@
 #include "window.h"
 #include "input.h"
 #include "image.h"
+#include "font.h"
 
 // ================================================================================
 // [1] データ定義と内部状態
@@ -32,7 +33,8 @@ typedef enum {
     CMD_CIRCLE,
     CMD_CIRCLE_FILL,
     CMD_IMAGE,
-    CMD_IMAGE_EX
+    CMD_IMAGE_EX,
+    CMD_TEXT
 } CmdType;
 
 typedef struct {
@@ -56,6 +58,7 @@ typedef struct {
             int alpha; 
             NxBlendMode blend; 
         } image_ex;
+        struct { float x, y; SDL_Texture *texture; } text;
     } data;
 } DrawCmd;
 
@@ -137,7 +140,8 @@ static SDL_BlendMode blend_mode_sub;
 static void nx_window_create(mrb_state *mrb);
 static void nx_window_update_fps(Uint64 current_ns);
 static bool nx_window_call_ruby_block(void);
-static void nx_window_push_cmd(DrawCmd cmd);
+static void nx_window_clear_queue(void);
+static bool nx_window_push_cmd(DrawCmd cmd);
 static void nx_window_draw_queue(void);
 static SDL_Color nx_window_parse_color(mrb_state *mrb, mrb_value color);
 
@@ -246,7 +250,7 @@ static mrb_value nx_window_yield_protected(mrb_state *mrb, mrb_value block) {
 // Rubyブロック実行の本体
 static bool nx_window_call_ruby_block(void) {
     window_state.logic_count++; // Rubyの処理が回った回数を数える
-    draw_cmd_count = 0;         // 実行前にキューを空にする
+    nx_window_clear_queue();    // 実行前にキューを空にする
     mrb_bool is_exc = false;    // エラーが起きたかどうかのフラグ
 
     // 保護バリア（mrb_protect）を張ってRubyのコード（do...end）を実行
@@ -302,16 +306,30 @@ SDL_Renderer* nx_window_get_renderer(void) {
 // [3] 内部描画ロジック
 // ================================================================================
 
-static void nx_window_push_cmd(DrawCmd cmd) {
+// 描画キューをリセットする際に、使い捨ての文字テクスチャを破棄する
+static void nx_window_clear_queue(void) {
+    for (int i = 0; i < draw_cmd_count; i++) {
+        // テキストコマンドで、かつテクスチャが生きている場合のみ破棄
+        if (draw_queue[i].type == CMD_TEXT && draw_queue[i].data.text.texture) {
+            SDL_DestroyTexture(draw_queue[i].data.text.texture);
+            draw_queue[i].data.text.texture = NULL; // 安全のため空にしておく
+        }
+    }
+    draw_cmd_count = 0; // ここでキューを空にする
+}
+
+static bool nx_window_push_cmd(DrawCmd cmd) {
     if (draw_cmd_count < MAX_DRAW_CMDS) {
         cmd.order = draw_cmd_count;                 // キューに入った順番を記録
         draw_queue[draw_cmd_count++] = cmd;
+        return true;
     } else {
         static bool warned = false;
         if (!warned) {
             SDL_Log("NXRuby Warning: Draw command queue overflow! Max %d", MAX_DRAW_CMDS);
             warned = true;
         }
+        return true;
     }
 }
 
@@ -440,6 +458,16 @@ static void nx_window_draw_queue(void) {
 
                     SDL_SetTextureAlphaMod(cmd->data.image_ex.texture, 255);
                     SDL_SetTextureBlendMode(cmd->data.image_ex.texture, SDL_BLENDMODE_BLEND);
+                }
+                break;
+            }
+            case CMD_TEXT: {
+                if (cmd->data.text.texture) {
+                    float w, h;
+                    SDL_GetTextureSize(cmd->data.text.texture, &w, &h);
+                    SDL_FRect dst_rect = { cmd->data.text.x, cmd->data.text.y, w, h };
+                    
+                    SDL_RenderTexture(window_state.renderer, cmd->data.text.texture, NULL, &dst_rect);
                 }
                 break;
             }
@@ -1183,6 +1211,55 @@ static mrb_value nx_window_draw_tile(mrb_state *mrb, mrb_value self) {
     return mrb_nil_value();
 }
 
+// --- Window.draw_font(x, y, text, font, options={}) ---
+static mrb_value nx_window_draw_font(mrb_state *mrb, mrb_value self) {
+    mrb_float x, y;
+    const char *text;
+    mrb_value font_obj;
+    mrb_value options = mrb_nil_value();
+    
+    // 引数: x, y, 文字列, Fontオブジェクト, [Hash]
+    mrb_get_args(mrb, "ffzo|H", &x, &y, &text, &font_obj, &options);
+
+    TTF_Font *ttf_font = nx_font_get_ptr(mrb, font_obj);
+    if (!ttf_font) mrb_raise(mrb, E_ARGUMENT_ERROR, "Invalid Font object");
+
+    DrawCmd cmd;
+    cmd.type = CMD_TEXT;
+    cmd.z = 0.0f;
+    cmd.color = (SDL_Color){255, 255, 255, 255}; // デフォルトは白
+    
+    // Hashオプションの解析
+    if (!mrb_nil_p(options)) {
+        mrb_value val;
+        val = mrb_hash_get(mrb, options, mrb_symbol_value(mrb_intern_cstr(mrb, "z")));
+        if (!mrb_nil_p(val)) cmd.z = (float)mrb_as_float(mrb, val);
+
+        val = mrb_hash_get(mrb, options, mrb_symbol_value(mrb_intern_cstr(mrb, "color")));
+        if (!mrb_nil_p(val)) cmd.color = nx_window_parse_color(mrb, val);
+    }
+
+    // SDL3_ttf で文字を画像（Surface）として生成し、テクスチャに変換する
+    // ※ SDL3 では長さ0を指定するとnull終端まで読んでくれます
+    SDL_Surface *surface = TTF_RenderText_Blended(ttf_font, text, 0, cmd.color);
+    if (!surface) return mrb_nil_value();
+    
+    SDL_Texture *texture = SDL_CreateTextureFromSurface(window_state.renderer, surface);
+    SDL_DestroySurface(surface); // Surfaceは用済みなので破棄
+    if (!texture) return mrb_nil_value();
+
+    cmd.data.text.texture = texture;
+    cmd.data.text.x = (float)x - window_state.ox;
+    cmd.data.text.y = (float)y - window_state.oy;
+
+    // キューが溢れて追加できなかった場合は、テクスチャだけ破棄してメモリを守る
+    if (!nx_window_push_cmd(cmd)) {
+        SDL_DestroyTexture(texture);
+    }
+    
+    return mrb_nil_value();
+}
+
 // ================================================================================
 // [6] 初期化とメソッド登録
 // ================================================================================
@@ -1242,7 +1319,8 @@ static const struct nx_method_table {
     {"draw_sub"        , nx_window_draw_sub        , MRB_ARGS_REQ(3) | MRB_ARGS_OPT(1)},
     {"draw_mod"        , nx_window_draw_mod        , MRB_ARGS_REQ(3) | MRB_ARGS_OPT(1)},
     {"draw_tile"       , nx_window_draw_tile       , MRB_ARGS_REQ(4) | MRB_ARGS_OPT(5)},
-    
+    {"draw_font"       , nx_window_draw_font       , MRB_ARGS_REQ(4) | MRB_ARGS_OPT(1)},
+
     // 終端マーク
     {NULL, NULL, 0} 
 };
@@ -1263,6 +1341,7 @@ void nx_window_init(mrb_state *mrb) {
 
 // アプリ終了時（SDL_AppQuit）に呼ばれる後片付け
 void nx_window_cleanup(void) {
+    nx_window_clear_queue();
     if (loop_state) {
         // mrb_close()によるシャットダウン中のため、mrb_freeやmrb_gc_unregisterは呼ばない
         loop_state = NULL;

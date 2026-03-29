@@ -1,6 +1,7 @@
 MRuby::Build.new do |conf|
   toolchain :visualcpp
-
+  conf.cc.flags << '/utf-8'
+  
   # 標準Gemを読み込む
   conf.gembox 'default'
 
@@ -13,8 +14,13 @@ MRuby::Build.new do |conf|
   conf.linker do |linker|
     linker.library_paths << "#{nxruby_dir}/deps/SDL3/lib/x64"
     linker.library_paths << "#{nxruby_dir}/deps/SDL3_image/lib/x64"
+    linker.library_paths << "#{nxruby_dir}/deps/SDL3_ttf/lib/x64"
+    linker.library_paths << "#{nxruby_dir}/deps/SDL3_mixer/lib/x64"
+
     linker.libraries << 'SDL3'
     linker.libraries << 'SDL3_image'
+    linker.libraries << 'SDL3_ttf'
+    linker.libraries << 'SDL3_mixer'
 
     linker.libraries << 'ws2_32'
     linker.libraries << 'user32'

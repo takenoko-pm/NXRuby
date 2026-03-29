@@ -1,4 +1,4 @@
-﻿// main.c
+// main.c
 //
 // main関数ではなくSDL3のCALLBACKSで処理をする
 // web(emscripten)含めたマルチプラットホームで安定に動作させるため

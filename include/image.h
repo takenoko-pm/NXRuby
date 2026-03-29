@@ -1,4 +1,4 @@
-﻿// image.c
+// image.c
 //
 // 外部のC言語から呼ばれる関数のみを書く
 // Rubyメソッドは書かない
@@ -15,7 +15,7 @@ typedef struct {
     int ref_count; // これを使っている Image の数
 } NxSharedTexture;
 
-// --- Rubyの Image オブジェクトが持つデータ ---
+// Rubyの Image オブジェクトが持つデータ
 typedef struct {
     NxSharedTexture *shared_tex; // 大元のテクスチャへのポインタ
     SDL_FRect src_rect;          // この画像が切り出されている範囲
