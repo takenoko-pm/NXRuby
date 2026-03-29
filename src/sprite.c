@@ -164,6 +164,7 @@ static mrb_value nx_sprite_initialize(mrb_state *mrb, mrb_value self) {
     sprite->y = (float)y;
     sprite->z = 0.0f;
     sprite->image = img;
+    mrb_iv_set(mrb, self, mrb_intern_lit(mrb, "@image"), img);
     
     // フラグ群の初期化
     sprite->visible = true;
@@ -180,6 +181,7 @@ static mrb_value nx_sprite_initialize(mrb_state *mrb, mrb_value self) {
     sprite->center_y_defined = false;
     sprite->alpha = 255;
     sprite->blend = mrb_symbol_value(mrb_intern_cstr(mrb, "alpha"));
+    mrb_iv_set(mrb, self, mrb_intern_lit(mrb, "@blend"), sprite->blend);
 
     DATA_PTR(self) = sprite;
     DATA_TYPE(self) = &nx_sprite_type;
@@ -350,7 +352,10 @@ static mrb_value nx_sprite_get_image(mrb_state *mrb, mrb_value self) {
 static mrb_value nx_sprite_set_image(mrb_state *mrb, mrb_value self) {
     mrb_value img; mrb_get_args(mrb, "o", &img);
     NxSprite *sprite = (NxSprite*)mrb_data_get_ptr(mrb, self, &nx_sprite_type);
-    if (sprite) sprite->image = img;
+    if (sprite) {
+        sprite->image = img;
+        mrb_iv_set(mrb, self, mrb_intern_lit(mrb, "@image"), img);
+    }
     return img;
 }
 
@@ -361,7 +366,10 @@ static mrb_value nx_sprite_get_blend(mrb_state *mrb, mrb_value self) {
 static mrb_value nx_sprite_set_blend(mrb_state *mrb, mrb_value self) {
     mrb_value val; mrb_get_args(mrb, "o", &val);
     NxSprite *sprite = (NxSprite*)mrb_data_get_ptr(mrb, self, &nx_sprite_type);
-    if (sprite) sprite->blend = val;
+    if (sprite) {
+        sprite->blend = val;
+        mrb_iv_set(mrb, self, mrb_intern_lit(mrb, "@blend"), val);
+    }
     return val;
 }
 
