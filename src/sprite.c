@@ -4,6 +4,8 @@
 #include <mruby/array.h>
 #include <mruby/hash.h>
 #include "sprite.h"
+#include "window.h"
+#include "image.h"
 
 // ================================================================================
 // [1] データ定義とメモリ管理
@@ -14,6 +16,11 @@ static void nx_sprite_free(mrb_state *mrb, void *ptr) {
 }
 
 static const struct mrb_data_type nx_sprite_type = { "Sprite", nx_sprite_free };
+
+static mrb_sym sym_update;
+static mrb_sym sym_draw;
+static mrb_sym sym_shot;
+static mrb_sym sym_hit;
 
 // ================================================================================
 // [2] 内部ヘルパー関数
@@ -28,15 +35,16 @@ static bool check_collision(mrb_state *mrb, mrb_value val1, mrb_value val2) {
     if (mrb_nil_p(s1->image) || mrb_nil_p(s2->image)) return false;
 
     // 画像サイズを取得
-    mrb_value vw1 = mrb_funcall(mrb, s1->image, "width", 0);
-    mrb_value vh1 = mrb_funcall(mrb, s1->image, "height", 0);
-    mrb_value vw2 = mrb_funcall(mrb, s2->image, "width", 0);
-    mrb_value vh2 = mrb_funcall(mrb, s2->image, "height", 0);
+    NxImage *img1 = nx_image_get_data(mrb, s1->image);
+    NxImage *img2 = nx_image_get_data(mrb, s2->image);
 
-    float w1 = mrb_float_p(vw1) ? (float)mrb_float(vw1) : (float)mrb_fixnum(vw1);
-    float h1 = mrb_float_p(vh1) ? (float)mrb_float(vh1) : (float)mrb_fixnum(vh1);
-    float w2 = mrb_float_p(vw2) ? (float)mrb_float(vw2) : (float)mrb_fixnum(vw2);
-    float h2 = mrb_float_p(vh2) ? (float)mrb_float(vh2) : (float)mrb_fixnum(vh2);
+    // 万が一Imageオブジェクト以外がセットされていた場合の安全対策
+    if (!img1 || !img2) return false;
+
+    float w1 = img1->width;
+    float h1 = img1->height;
+    float w2 = img2->width;
+    float h2 = img2->height;
 
     // AABB (矩形) 判定
     return (s1->x < s2->x + w2) && (s1->x + w1 > s2->x) &&
@@ -44,8 +52,7 @@ static bool check_collision(mrb_state *mrb, mrb_value val1, mrb_value val2) {
 }
 
 // --- 配列の中身のメソッドを全部呼ぶ ---
-static void nx_call_method_on_array(mrb_state *mrb, mrb_value obj, const char *method_name) {
-    mrb_sym sym = mrb_intern_cstr(mrb, method_name);
+static void nx_call_method_on_array(mrb_state *mrb, mrb_value obj, mrb_sym sym) {
     if (mrb_array_p(obj)) {
         mrb_int len = RARRAY_LEN(obj);
         for (mrb_int i = 0; i < len; i++) {
@@ -79,8 +86,6 @@ static mrb_value nx_sprite_check(mrb_state *mrb, mrb_value self) {
     mrb_int len1 = RARRAY_LEN(a1);
     mrb_int len2 = RARRAY_LEN(a2);
 
-    mrb_sym sym_shot = mrb_intern_cstr(mrb, "shot");
-    mrb_sym sym_hit  = mrb_intern_cstr(mrb, "hit");
     struct RClass *sprite_class = mrb_class_get(mrb, "Sprite");
 
     // C言語による爆速の二重ループ
@@ -105,14 +110,14 @@ static mrb_value nx_sprite_check(mrb_state *mrb, mrb_value self) {
 // --- Sprite.update(ary) ---
 static mrb_value nx_sprite_s_update(mrb_state *mrb, mrb_value self) {
     mrb_value ary; mrb_get_args(mrb, "o", &ary);
-    nx_call_method_on_array(mrb, ary, "update");
+    nx_call_method_on_array(mrb, ary, sym_update);
     return ary;
 }
 
 // --- Sprite.draw(ary) ---
 static mrb_value nx_sprite_s_draw(mrb_state *mrb, mrb_value self) {
     mrb_value ary; mrb_get_args(mrb, "o", &ary);
-    nx_call_method_on_array(mrb, ary, "draw");
+    nx_call_method_on_array(mrb, ary, sym_draw);
     return ary;
 }
 
@@ -169,8 +174,10 @@ static mrb_value nx_sprite_initialize(mrb_state *mrb, mrb_value self) {
     sprite->angle = 0.0f;
     sprite->scale_x = 1.0f;
     sprite->scale_y = 1.0f;
-    sprite->center_x = -9999.0f; 
-    sprite->center_y = -9999.0f;
+    sprite->center_x = 0.0f;
+    sprite->center_y = 0.0f;
+    sprite->center_x_defined = false;
+    sprite->center_y_defined = false;
     sprite->alpha = 255;
     sprite->blend = mrb_symbol_value(mrb_intern_cstr(mrb, "alpha"));
 
@@ -184,31 +191,13 @@ static mrb_value nx_sprite_draw(mrb_state *mrb, mrb_value self) {
     NxSprite *sprite = (NxSprite*)mrb_data_get_ptr(mrb, self, &nx_sprite_type);
     if (!sprite || !sprite->visible || sprite->vanished || mrb_nil_p(sprite->image)) return mrb_nil_value();
 
-    mrb_value window_module = mrb_obj_value(mrb_module_get(mrb, "Window"));
-
-    mrb_value hash = mrb_hash_new(mrb);
-    mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_cstr(mrb, "z")), mrb_float_value(mrb, sprite->z));
-    mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_cstr(mrb, "angle")), mrb_float_value(mrb, sprite->angle));
-    mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_cstr(mrb, "scale_x")), mrb_float_value(mrb, sprite->scale_x));
-    mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_cstr(mrb, "scale_y")), mrb_float_value(mrb, sprite->scale_y));
-    
-    if (sprite->center_x != -9999.0f) {
-        mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_cstr(mrb, "center_x")), mrb_float_value(mrb, sprite->center_x));
-    }
-    if (sprite->center_y != -9999.0f) {
-        mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_cstr(mrb, "center_y")), mrb_float_value(mrb, sprite->center_y));
-    }
-    
-    mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_cstr(mrb, "alpha")), mrb_int_value(mrb, sprite->alpha));
-    
-    if (!mrb_nil_p(sprite->blend)) {
-        mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_cstr(mrb, "blend")), sprite->blend);
-    }
-
-    mrb_funcall(mrb, window_module, "draw_ex", 4, 
-                mrb_float_value(mrb, sprite->x), 
-                mrb_float_value(mrb, sprite->y), 
-                sprite->image, hash);
+    nx_window_draw_sprite_c(mrb, 
+        sprite->x, sprite->y, sprite->z, sprite->image,
+        sprite->angle, sprite->scale_x, sprite->scale_y,
+        sprite->center_x, sprite->center_y, 
+        sprite->center_x_defined, sprite->center_y_defined,
+        sprite->alpha, sprite->blend
+    );
 
     return mrb_nil_value();
 }
@@ -289,6 +278,36 @@ static mrb_value nx_sprite_is_vanished(mrb_state *mrb, mrb_value self) {
         return mrb_float_value(mrb, val); \
     }
 
+static mrb_value nx_sprite_get_center_x(mrb_state *mrb, mrb_value self) {
+    NxSprite *sprite = (NxSprite*)mrb_data_get_ptr(mrb, self, &nx_sprite_type);
+    return mrb_float_value(mrb, sprite ? sprite->center_x : 0.0f);
+}
+
+static mrb_value nx_sprite_set_center_x(mrb_state *mrb, mrb_value self) {
+    mrb_float val; mrb_get_args(mrb, "f", &val);
+    NxSprite *sprite = (NxSprite*)mrb_data_get_ptr(mrb, self, &nx_sprite_type);
+    if (sprite) {
+        sprite->center_x = (float)val;
+        sprite->center_x_defined = true;
+    }
+    return mrb_float_value(mrb, val);
+}
+
+static mrb_value nx_sprite_get_center_y(mrb_state *mrb, mrb_value self) {
+    NxSprite *sprite = (NxSprite*)mrb_data_get_ptr(mrb, self, &nx_sprite_type);
+    return mrb_float_value(mrb, sprite ? sprite->center_y : 0.0f);
+}
+
+static mrb_value nx_sprite_set_center_y(mrb_state *mrb, mrb_value self) {
+    mrb_float val; mrb_get_args(mrb, "f", &val);
+    NxSprite *sprite = (NxSprite*)mrb_data_get_ptr(mrb, self, &nx_sprite_type);
+    if (sprite) {
+        sprite->center_y = (float)val;
+        sprite->center_y_defined = true;
+    }
+    return mrb_float_value(mrb, val);
+}
+
 #define DEFINE_BOOL_PROP(prop_name) \
     static mrb_value nx_sprite_get_##prop_name(mrb_state *mrb, mrb_value self) { \
         NxSprite *sprite = (NxSprite*)mrb_data_get_ptr(mrb, self, &nx_sprite_type); \
@@ -321,8 +340,6 @@ DEFINE_BOOL_PROP(collision_enable)
 DEFINE_FLOAT_PROP(angle)
 DEFINE_FLOAT_PROP(scale_x)
 DEFINE_FLOAT_PROP(scale_y)
-DEFINE_FLOAT_PROP(center_x)
-DEFINE_FLOAT_PROP(center_y)
 DEFINE_INT_PROP(alpha)
 
 // --- 特殊なプロパティ (image, blend) ---
@@ -347,7 +364,6 @@ static mrb_value nx_sprite_set_blend(mrb_state *mrb, mrb_value self) {
     if (sprite) sprite->blend = val;
     return val;
 }
-
 
 // ================================================================================
 // [6] 初期化とメソッド登録
@@ -416,6 +432,11 @@ static const struct nx_method_table sprite_instance_methods[] = {
 };
 
 void nx_sprite_init(mrb_state *mrb) {
+    sym_update = mrb_intern_cstr(mrb, "update");
+    sym_draw   = mrb_intern_cstr(mrb, "draw");
+    sym_shot   = mrb_intern_cstr(mrb, "shot");
+    sym_hit    = mrb_intern_cstr(mrb, "hit");
+
     struct RClass *Sprite = mrb_define_class(mrb, "Sprite", mrb->object_class);
     MRB_SET_INSTANCE_TT(Sprite, MRB_TT_DATA);
 

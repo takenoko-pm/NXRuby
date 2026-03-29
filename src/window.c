@@ -144,6 +144,7 @@ static void nx_window_clear_queue(void);
 static bool nx_window_push_cmd(DrawCmd cmd);
 static void nx_window_draw_queue(void);
 static SDL_Color nx_window_parse_color(mrb_state *mrb, mrb_value color);
+static bool nx_window_setup_ex_cmd(mrb_state *mrb, mrb_value image_obj, float x, float y, float z, DrawCmd *cmd);
 
 // ================================================================================
 // [2] 内部エンジンロジック
@@ -329,7 +330,7 @@ static bool nx_window_push_cmd(DrawCmd cmd) {
             SDL_Log("NXRuby Warning: Draw command queue overflow! Max %d", MAX_DRAW_CMDS);
             warned = true;
         }
-        return true;
+        return false;
     }
 }
 
@@ -789,6 +790,33 @@ static mrb_value nx_window_set_mag_filter(mrb_state *mrb, mrb_value self) {
     return mrb_int_value(mrb, filter);
 }
 
+// --- C言語から直接拡張描画キューに積む関数 ---
+void nx_window_draw_sprite_c(mrb_state *mrb, float x, float y, float z, mrb_value image, float angle, float scale_x, float scale_y, float center_x, float center_y, bool cx_def, bool cy_def, int alpha, mrb_value blend) {
+    DrawCmd cmd;
+    if (!nx_window_setup_ex_cmd(mrb, image, x, y, z, &cmd)) return;
+
+    cmd.data.image_ex.angle = angle;
+    cmd.data.image_ex.scale_x = scale_x;
+    cmd.data.image_ex.scale_y = scale_y;
+    
+    // フラグが立っている時だけ座標を上書き
+    if (cx_def) cmd.data.image_ex.center_x = center_x;
+    if (cy_def) cmd.data.image_ex.center_y = center_y;
+    
+    cmd.data.image_ex.alpha = alpha;
+
+    // ブレンドモードの変換
+    if (mrb_symbol_p(blend)) {
+        const char *blend_name = mrb_sym_name(mrb, mrb_symbol(blend));
+        if (strcmp(blend_name, "add") == 0) cmd.data.image_ex.blend = BLEND_ADD;
+        else if (strcmp(blend_name, "sub") == 0) cmd.data.image_ex.blend = BLEND_SUB;
+        else if (strcmp(blend_name, "mod") == 0) cmd.data.image_ex.blend = BLEND_MOD;
+        else cmd.data.image_ex.blend = BLEND_ALPHA; 
+    }
+
+    nx_window_push_cmd(cmd);
+}
+
 // ================================================================================
 // [5] Ruby API: 描画コマンド
 // ================================================================================
@@ -1036,14 +1064,14 @@ static mrb_value nx_window_draw_ex(mrb_state *mrb, mrb_value self) {
 static mrb_value nx_window_draw_rot(mrb_state *mrb, mrb_value self) {
     mrb_float x, y, angle;
     mrb_value img;
-    mrb_float cx = -9999.0, cy = -9999.0, z = 0.0; // 省略判定用のマジックナンバー
-    mrb_get_args(mrb, "ffof|fff", &x, &y, &img, &angle, &cx, &cy, &z);
+    mrb_float cx = 0.0, cy = 0.0, z = 0.0;
+    mrb_int argc = mrb_get_args(mrb, "ffof|fff", &x, &y, &img, &angle, &cx, &cy, &z);
 
     DrawCmd cmd;
     if (nx_window_setup_ex_cmd(mrb, img, (float)x, (float)y, (float)z, &cmd)) {
         cmd.data.image_ex.angle = (float)angle;
-        if (cx != -9999.0) cmd.data.image_ex.center_x = (float)cx;
-        if (cy != -9999.0) cmd.data.image_ex.center_y = (float)cy;
+        if (argc >= 5) cmd.data.image_ex.center_x = (float)cx;
+        if (argc >= 6) cmd.data.image_ex.center_y = (float)cy;
         nx_window_push_cmd(cmd);
     }
     return mrb_nil_value();
@@ -1053,15 +1081,15 @@ static mrb_value nx_window_draw_rot(mrb_state *mrb, mrb_value self) {
 static mrb_value nx_window_draw_scale(mrb_state *mrb, mrb_value self) {
     mrb_float x, y, sx, sy;
     mrb_value img;
-    mrb_float cx = -9999.0, cy = -9999.0, z = 0.0;
-    mrb_get_args(mrb, "ffoff|fff", &x, &y, &img, &sx, &sy, &cx, &cy, &z);
+    mrb_float cx = 0.0, cy = 0.0, z = 0.0;
+    mrb_int argc = mrb_get_args(mrb, "ffoff|fff", &x, &y, &img, &sx, &sy, &cx, &cy, &z);
 
     DrawCmd cmd;
     if (nx_window_setup_ex_cmd(mrb, img, (float)x, (float)y, (float)z, &cmd)) {
         cmd.data.image_ex.scale_x = (float)sx;
         cmd.data.image_ex.scale_y = (float)sy;
-        if (cx != -9999.0) cmd.data.image_ex.center_x = (float)cx;
-        if (cy != -9999.0) cmd.data.image_ex.center_y = (float)cy;
+        if (argc >= 6) cmd.data.image_ex.center_x = (float)cx;
+        if (argc >= 7) cmd.data.image_ex.center_y = (float)cy;
         nx_window_push_cmd(cmd);
     }
     return mrb_nil_value();
@@ -1189,6 +1217,10 @@ static mrb_value nx_window_draw_tile(mrb_state *mrb, mrb_value self) {
             if (tile_idx < 0 || tile_idx >= img_len) continue; 
 
             mrb_value img_obj = mrb_ary_entry(img_ary, tile_idx);
+
+            // img_obj が nil の場合は安全にスキップする
+            if (mrb_nil_p(img_obj)) continue;
+
             NxImage *img_data = nx_image_get_data(mrb, img_obj);
             if (!img_data || !img_data->shared_tex || !img_data->shared_tex->texture) continue;
 
@@ -1202,8 +1234,18 @@ static mrb_value nx_window_draw_tile(mrb_state *mrb, mrb_value self) {
             cmd.data.image.src_rect = img_data->src_rect;
             
             // 描画座標 ＝ ベース座標 ＋ (ループ変数 × タイルサイズ) － オフセット(ox, oy)
-            cmd.data.image.x = (float)x + (ix * tile_w) - window_state.ox;
-            cmd.data.image.y = (float)y + (iy * tile_h) - window_state.oy;
+            float draw_x = (float)x + (ix * tile_w) - window_state.ox;
+            float draw_y = (float)y + (iy * tile_h) - window_state.oy;
+
+            // 画面外カリング (クリッピング)
+            // タイルの右端が画面左端(0)より左、または左端が画面右端(width)より右ならスキップ
+            if (draw_x + tile_w < 0 || draw_x > window_state.width ||
+                draw_y + tile_h < 0 || draw_y > window_state.height) {
+                continue;
+            }
+
+            cmd.data.image.x = draw_x;
+            cmd.data.image.y = draw_y;
 
             nx_window_push_cmd(cmd);
         }

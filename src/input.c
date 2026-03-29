@@ -180,6 +180,9 @@ static float nx_get_pad_axis(SDL_GamepadAxis axis) {
     if (!input_state.gamepad) return 0.0f;
     Sint16 val = SDL_GetGamepadAxis(input_state.gamepad, axis);
     
+    // SDL3の最小値 (-32768) が来た場合は -32767 にクランプする
+    if (val < -32767) val = -32767;
+
     // 約24%のデッドゾーン（これがないと指を離していても勝手にキャラが動く「ドリフト現象」が起きます）
     if (val > -8000 && val < 8000) return 0.0f;
     
@@ -242,7 +245,7 @@ static mrb_value nx_input_y(mrb_state *mrb, mrb_value self) {
     if (input_state.current_keys[SDL_SCANCODE_DOWN]) y += 1.0f;
     if (input_state.current_keys[SDL_SCANCODE_UP])   y -= 1.0f;
 
-    // 2. ゲームパッド (★追加)
+    // 2. ゲームパッド
     if (input_state.gamepad) {
         if (SDL_GetGamepadButton(input_state.gamepad, SDL_GAMEPAD_BUTTON_DPAD_DOWN)) y += 1.0f;
         if (SDL_GetGamepadButton(input_state.gamepad, SDL_GAMEPAD_BUTTON_DPAD_UP))   y -= 1.0f;
@@ -285,7 +288,7 @@ static mrb_value nx_input_key_push(mrb_state *mrb, mrb_value self) {
     // オートリピート設定が有効(waitとintervalが1以上)で、waitを超えている場合
     if (wait > 0 && interval > 0 && count > wait) {
         // waitを超過したあとのフレーム数が、intervalの倍数に合致した瞬間だけtrue
-        if ((count - wait) % interval == 1) { 
+        if (interval == 1 || (count - wait) % interval == 1) {
             return mrb_true_value(); 
         }
     }
@@ -323,7 +326,7 @@ static mrb_value nx_input_pad_push(mrb_state *mrb, mrb_value self) {
 
     // オートリピート判定
     if (wait > 0 && interval > 0 && count > wait) {
-        if ((count - wait) % interval == 1) { 
+        if (interval == 1 || (count - wait) % interval == 1) {
             return mrb_true_value(); 
         }
     }

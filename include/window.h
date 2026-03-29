@@ -26,3 +26,6 @@ void nx_window_convert_event(SDL_Event *event);
 
 // マウスの座標入力用
 void nx_window_set_mouse_pos(float x, float y);
+
+// C言語内部から直接描画キューに積むための高速API
+void nx_window_draw_sprite_c(mrb_state *mrb, float x, float y, float z, mrb_value image, float angle, float scale_x, float scale_y, float center_x, float center_y, bool cx_def, bool cy_def, int alpha, mrb_value blend);
