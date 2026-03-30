@@ -183,10 +183,18 @@ static float nx_get_pad_axis(SDL_GamepadAxis axis) {
     // SDL3の最小値 (-32768) が来た場合は -32767 にクランプする
     if (val < -32767) val = -32767;
 
-    // 約24%のデッドゾーン（これがないと指を離していても勝手にキャラが動く「ドリフト現象」が起きます）
-    if (val > -8000 && val < 8000) return 0.0f;
+    const float DEADZONE = 8000.0f;
+    const float MAX_VAL = 32767.0f;
+
+    // 約24%のデッドゾーン
+    if (val > -DEADZONE && val < DEADZONE) return 0.0f;
     
-    return (float)val / 32767.0f;
+    // デッドゾーンを超えた分を 0.0 〜 1.0 に再マッピング（ジャンプ現象を防ぐ）
+    if (val >= DEADZONE) {
+        return (val - DEADZONE) / (MAX_VAL - DEADZONE);
+    } else {
+        return (val + DEADZONE) / (MAX_VAL - DEADZONE); // 負の方向
+    }
 }
 
 // ================================================================================

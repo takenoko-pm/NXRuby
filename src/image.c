@@ -63,12 +63,13 @@ static mrb_value nx_image_initialize(mrb_state *mrb, mrb_value self) {
     if (!mrb_nil_p(color_ary) && mrb_array_p(color_ary)) {
         mrb_int len = RARRAY_LEN(color_ary);
         if (len >= 3) {
-            r = (Uint8)mrb_fixnum(mrb_ary_ref(mrb, color_ary, 0));
-            g = (Uint8)mrb_fixnum(mrb_ary_ref(mrb, color_ary, 1));
-            b = (Uint8)mrb_fixnum(mrb_ary_ref(mrb, color_ary, 2));
+            // mrb_fixnum から mrb_as_int に変更し、安全に整数化する
+            r = (Uint8)mrb_as_int(mrb, mrb_ary_ref(mrb, color_ary, 0));
+            g = (Uint8)mrb_as_int(mrb, mrb_ary_ref(mrb, color_ary, 1));
+            b = (Uint8)mrb_as_int(mrb, mrb_ary_ref(mrb, color_ary, 2));
             a = 255; // RGB指定なら不透明
             if (len >= 4) {
-                a = (Uint8)mrb_fixnum(mrb_ary_ref(mrb, color_ary, 3));
+                a = (Uint8)mrb_as_int(mrb, mrb_ary_ref(mrb, color_ary, 3));
             }
         }
     }

@@ -3,6 +3,7 @@
 #include <mruby/class.h>
 #include <mruby/array.h>
 #include <mruby/hash.h>
+#include <mruby/variable.h>
 #include "sprite.h"
 #include "window.h"
 #include "image.h"
