@@ -53,7 +53,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     }
 
     // コマンドライン引数からスクリプト名を取得
-    const char *script_name = (argc > 1) ? argv[1] : "src/main.rb";
+    const char *script_name = (argc > 1) ? argv[1] : "scripts/main.rb";
 
     // main.rb をロードする
     FILE *fp = fopen(script_name, "r");
