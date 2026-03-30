@@ -105,17 +105,17 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 
 // --- 終了処理 ---
 // SDL側は自動で片付くので、mruby側を片付ける（SDL_Quitは必要ない）
-void SDL_AppQuit(void *appstate, SDL_AppResult result) {
-    // ここにcleanupを追加
-    nx_window_cleanup();
-    nx_sound_cleanup();
-    TTF_Quit();
-    
-    // mrubyの終了（自動的に gem_final が呼ばれ、nx_window_cleanup も実行される）
+void SDL_AppQuit(void *appstate, SDL_AppResult result) {    
+    // mrubyの終了
     if (mrb) {
         mrb_close(mrb);
         mrb = NULL;
     }
+
+    // ここにcleanupを追加
+    nx_window_cleanup();
+    nx_sound_cleanup();
+    TTF_Quit();
 
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "[NXRuby] NXRuby App Quit.");
 }
