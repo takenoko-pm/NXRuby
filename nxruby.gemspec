@@ -18,4 +18,6 @@ Gem::Specification.new do |spec|
   end
   
   spec.files = Dir.glob("{lib,ext}/**/*").select { |f| File.file?(f) } + ["nxruby.gemspec", "README.md"]
+  spec.require_paths = ["lib"]
+  spec.add_development_dependency "rake-compiler"
 end
