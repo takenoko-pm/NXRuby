@@ -36,6 +36,14 @@ def build_sdl_component(repo_name, lib_name, version, depends_on = [])
       recipe.configure_options << "-DSDL_OPENGLES=OFF"
     end
 
+    if lib_name == "SDL3_image"
+      recipe.configure_options << "-DSDLIMAGE_VENDORED=ON"
+    elsif lib_name == "SDL3_mixer"
+      recipe.configure_options << "-DSDLMIXER_VENDORED=ON"
+    elsif lib_name == "SDL3_ttf"
+      recipe.configure_options << "-DSDLTTF_VENDORED=ON"
+    end
+
     depends_on.each do |dep_name|
       dep_path = $recipes[dep_name].path
       recipe.configure_options << "-DCMAKE_PREFIX_PATH=#{dep_path}"
