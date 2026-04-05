@@ -32,6 +32,10 @@ def build_sdl_component(repo_name, lib_name, version, depends_on = [])
     recipe.configure_options << "-DBUILD_SHARED_LIBS=ON"
     recipe.configure_options << "-DSDL_STATIC=OFF"
     
+    if RUBY_PLATFORM =~ /mingw|mswin/
+      recipe.configure_options << "-DSDL_OPENGLES=OFF"
+    end
+
     depends_on.each do |dep_name|
       dep_path = $recipes[dep_name].path
       recipe.configure_options << "-DCMAKE_PREFIX_PATH=#{dep_path}"

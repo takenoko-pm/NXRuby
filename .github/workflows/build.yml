@@ -24,7 +24,13 @@ jobs:
       # Linuxの時だけ、このステップが実行される（PowerShellエラー回避）
       - name: Install Linux Dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libpulse-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev libpulse-dev \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
+            libwayland-dev libxkbcommon-dev wayland-protocols \
+            libegl1-mesa-dev libgl1-mesa-dev
 
       # C拡張をコンパイル（ここでSDL3のダウンロードとビルドが行われる）
       - name: Compile Extension
