@@ -10,7 +10,12 @@ Gem::Specification.new do |spec|
   
   spec.extensions    = ["ext/nxruby/extconf.rb"]
   spec.platform      = Gem::Platform::CURRENT
-  spec.files         = Dir.glob("{lib,ext}/**/*").select { |f| File.file?(f) } + ["nxruby.gemspec", "README.md"]
-  spec.require_paths = ["lib"]
-  spec.add_development_dependency "rake-compiler"
+
+  if ENV['NXRUBY_PRECOMPILED'] == "true"
+    spec.extensions = []
+  else
+    spec.extensions = ["ext/nxruby/extconf.rb"]
+  end
+  
+  spec.files = Dir.glob("{lib,ext}/**/*").select { |f| File.file?(f) } + ["nxruby.gemspec", "README.md"]
 end

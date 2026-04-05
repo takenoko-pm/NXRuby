@@ -26,11 +26,17 @@ jobs:
         if: runner.os == 'Windows'
         run: ridk exec pacman -S --noconfirm mingw-w64-ucrt-x86_64-freetype mingw-w64-ucrt-x86_64-harfbuzz
 
-      - name: Build Native Gem
-        run: rake native gem
-        
+      - name: Compile Extension
+        run: rake compile
+
+      - name: Build Gem
+        run: gem build nxruby.gemspec
+        env:
+          NXRUBY_PRECOMPILED: "true"
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: gem-${{ matrix.os }}
-          path: pkg/*.gem
+          path: "*.gem"
+          
