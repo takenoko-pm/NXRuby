@@ -22,6 +22,10 @@ jobs:
       - name: Install Build Tools
         run: gem install rake-compiler mini_portile2
 
+      - name: Install Windows Dependencies
+        if: runner.os == 'Windows'
+        run: ridk exec pacman -S --noconfirm mingw-w64-ucrt-x86_64-freetype mingw-w64-ucrt-x86_64-harfbuzz
+
       - name: Compile Extension
         run: rake compile
 

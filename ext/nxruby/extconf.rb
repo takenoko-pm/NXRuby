@@ -34,10 +34,6 @@ def build_sdl_component(repo_name, lib_name, version, depends_on = [])
     
     if RUBY_PLATFORM =~ /mingw|mswin/
       recipe.configure_options << "-DSDL_OPENGLES=OFF"
-
-      if lib_name == "SDL3_ttf"
-        recipe.configure_options << "-DSDLTTF_VENDORED=ON"
-      end
     end
 
     depends_on.each do |dep_name|
