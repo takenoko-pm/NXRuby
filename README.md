@@ -1,15 +1,14 @@
 # NXRuby
-2DゲームライブラリであるDXRubyのAPIを参考にSDL3で作成したゲームライブラリです。
+2DゲームライブラリであるDXRubyのAPIを参考にSDL3+Rubyで作成したゲームライブラリです。
+
+Ruby 3.4.x をサポートしています。
 
 ## 状況
 開発中
 
 ## 特徴(目標)
-- mrubyでスクリプトを書ける
+- Windows/Mac/Linuxサポート
 - SDL3によるモダンなレンダリング
-- Windows/Linux/Macサポート
-- WASM対応によるブラウザゲームサポート
-(現在はWindowsでしかビルドできません)
 
 ## 参考
 - [DXRuby(github)](https://github.com/mirichi/dxruby)
