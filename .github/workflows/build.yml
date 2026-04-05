@@ -1,0 +1,38 @@
+name: Build Native Gems
+on: [push]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows, Ubuntu(Linux), MacOS の3つの環境で並列実行
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - name: Install Build Tools
+        run: |
+          gem install rake-compiler mini_portile2
+          # Linuxの場合は追加のパッケージが必要な場合がある
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            sudo apt-get update && sudo apt-get install -y libasound2-dev libpulse-dev
+          fi
+
+      - name: Build Gem
+        run: |
+          # 自分のプラットフォームに合わせたネイティブGemを作成
+          rake native gem
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gem-${{ matrix.os }}
+          path: pkg/*.gem
