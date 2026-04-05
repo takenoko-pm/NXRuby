@@ -1,3 +1,4 @@
+# .github/workflows/build.yml
 name: Build Native Gems
 on: [push]
 
@@ -7,7 +8,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        # Windows, Mac(Apple Silicon), Mac(Intel)
+        os: [windows-latest, macos-latest, macos-13]
     steps:
       - uses: actions/checkout@v4
 
@@ -17,30 +19,15 @@ jobs:
           ruby-version: '3.3'
           bundler-cache: true
 
-      # 全OS共通のツールをインストール
       - name: Install Build Tools
         run: gem install rake-compiler mini_portile2
 
-      # Linuxの時だけ、このステップが実行される（PowerShellエラー回避）
-      - name: Install Linux Dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libasound2-dev libpulse-dev \
-            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
-            libwayland-dev libxkbcommon-dev wayland-protocols \
-            libegl1-mesa-dev libgl1-mesa-dev
-
-      # C拡張をコンパイル（ここでSDL3のダウンロードとビルドが行われる）
       - name: Compile Extension
         run: rake compile
 
-      # gemspecを読み込んで、今ビルドしたバイナリ入りのGemファイルを作成する
       - name: Build Gem
         run: gem build nxruby.gemspec
 
-      # 完成した *.gem をアーティファクトとしてアップロード
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
