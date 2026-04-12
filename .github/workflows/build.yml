@@ -18,10 +18,11 @@ jobs:
           ruby-version: '3.4'
           bundler-cache: true
 
-      # OSごとにSDL2をインストールする
       - name: Install SDL2 (Ubuntu)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
 
       - name: Install SDL2 (macOS)
         if: runner.os == 'macOS'
@@ -31,8 +32,12 @@ jobs:
         if: runner.os == 'Windows'
         run: ridk exec pacman -S --noconfirm mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-SDL2_image mingw-w64-ucrt-x86_64-SDL2_mixer mingw-w64-ucrt-x86_64-SDL2_ttf
 
-      # コンパイルが通るかテスト
       - name: Compile Extension
+        shell: bash
         run: |
           gem install rake-compiler pkg-config
-          rake compile
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            ridk exec rake compile
+          else
+            rake compile
+          fi

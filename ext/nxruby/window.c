@@ -60,7 +60,6 @@ typedef struct {
 static DrawCmd draw_queue[MAX_DRAW_CMDS];
 static int draw_cmd_count = 0;
 
-// ウィンドウ状態を管理する構造体
 typedef struct {
     bool          is_ready;
     SDL_Window   *window;
@@ -78,7 +77,6 @@ typedef struct {
     SDL_ScaleMode min_filter;
     SDL_ScaleMode mag_filter;
     
-    // FPS関連
     Uint64        last_ns;
     Uint64        lag_ns;
     int           target_fps;
@@ -103,8 +101,8 @@ static WindowState window_state = {
     .ox            = 0.0f,
     .oy            = 0.0f,
     .bgcolor       = {0, 0, 0, 255},
-    .min_filter    = SDL_SCALEMODE_NEAREST,
-    .mag_filter    = SDL_SCALEMODE_NEAREST,
+    .min_filter    = SDL_ScaleModeNearest,
+    .mag_filter    = SDL_ScaleModeNearest,
     .last_ns       = 0,
     .lag_ns        = 0,
     .target_fps    = 60,
@@ -125,7 +123,6 @@ static void nx_window_draw_queue(void);
 static SDL_Color nx_window_parse_color(VALUE color);
 static bool nx_window_setup_ex_cmd(VALUE image_obj, float x, float y, float z, DrawCmd *cmd);
 
-// --- ヘルパー: ナノ秒を取得する ---
 static Uint64 get_ticks_ns(void) {
     return (SDL_GetPerformanceCounter() * 1000000000ULL) / SDL_GetPerformanceFrequency();
 }
@@ -181,7 +178,6 @@ static VALUE call_yield(VALUE arg) {
     return rb_yield(Qnil);
 }
 
-// 毎フレーム呼ばれる処理 (ナノ秒精度での堅牢な実装に戻した)
 bool nx_window_tick(void) {
     Uint64 current_ns = get_ticks_ns();
     nx_window_update_fps(current_ns);
@@ -193,7 +189,6 @@ bool nx_window_tick(void) {
         Uint64 frame_time = current_ns - window_state.last_ns;
         window_state.last_ns = current_ns;
 
-        // ラグの上限キャップ（処理落ち時の暴走ストッパー: 0.1秒 = 100ms）
         if (frame_time > 100000000ULL) frame_time = 100000000ULL; 
 
         window_state.lag_ns += frame_time;
@@ -240,7 +235,6 @@ static void nx_window_update_fps(Uint64 current_ns) {
     }
 }
 
-// ウィンドウ拡大時やDPI環境でマウス座標がズレないよう強制補正する関数
 void nx_window_convert_event(SDL_Event *event) {
     if (!window_state.renderer) return;
 
@@ -381,7 +375,13 @@ static void nx_window_draw_queue(void) {
                         cmd->data.image.x, cmd->data.image.y, 
                         cmd->data.image.src_rect.w, cmd->data.image.src_rect.h
                     };
-                    SDL_RenderCopyF(window_state.renderer, cmd->data.image.texture, &cmd->data.image.src_rect, &dst_rect);
+                    SDL_Rect src_rect = {
+                        (int)cmd->data.image.src_rect.x,
+                        (int)cmd->data.image.src_rect.y,
+                        (int)cmd->data.image.src_rect.w,
+                        (int)cmd->data.image.src_rect.h
+                    };
+                    SDL_RenderCopyF(window_state.renderer, cmd->data.image.texture, &src_rect, &dst_rect);
                 }
                 break;
             }
@@ -410,7 +410,14 @@ static void nx_window_draw_queue(void) {
                         cmd->data.image_ex.center_y * cmd->data.image_ex.scale_y
                     };
 
-                    SDL_RenderCopyExF(window_state.renderer, cmd->data.image_ex.texture, &cmd->data.image_ex.src_rect, &dst_rect, cmd->data.image_ex.angle, &center, SDL_FLIP_NONE);
+                    SDL_Rect src_rect = {
+                        (int)cmd->data.image_ex.src_rect.x,
+                        (int)cmd->data.image_ex.src_rect.y,
+                        (int)cmd->data.image_ex.src_rect.w,
+                        (int)cmd->data.image_ex.src_rect.h
+                    };
+
+                    SDL_RenderCopyExF(window_state.renderer, cmd->data.image_ex.texture, &src_rect, &dst_rect, cmd->data.image_ex.angle, &center, SDL_FLIP_NONE);
 
                     SDL_SetTextureAlphaMod(cmd->data.image_ex.texture, 255);
                     SDL_SetTextureBlendMode(cmd->data.image_ex.texture, SDL_BLENDMODE_BLEND);
@@ -481,7 +488,7 @@ static VALUE nx_window_loop(VALUE self) {
 
 static VALUE nx_window_close(VALUE self) {
     SDL_Event event;
-    SDL_zero(&event);
+    SDL_zero(event);
     event.type = SDL_QUIT;
     SDL_PushEvent(&event);
     return Qnil;
@@ -958,7 +965,9 @@ static VALUE nx_window_draw_font(int argc, VALUE *argv, VALUE self) {
     SDL_Surface *surf = TTF_RenderUTF8_Blended(ttf, StringValueCStr(rtext), cmd.color);
     if (!surf) return Qnil;
     SDL_Texture *tex = SDL_CreateTextureFromSurface(window_state.renderer, surf);
-    SDL_DestroySurface(surf);
+    
+    SDL_FreeSurface(surf);
+    
     if (!tex) return Qnil;
 
     cmd.data.text.texture = tex;
@@ -976,8 +985,8 @@ static VALUE nx_window_draw_font(int argc, VALUE *argv, VALUE self) {
 void nx_window_init(void) {
     VALUE mWindow = rb_define_module("Window");
 
-    rb_define_const(rb_cObject, "TEXF_POINT",  INT2NUM(SDL_SCALEMODE_NEAREST));
-    rb_define_const(rb_cObject, "TEXF_LINEAR", INT2NUM(SDL_SCALEMODE_LINEAR));
+    rb_define_const(rb_cObject, "TEXF_POINT",  INT2NUM(SDL_ScaleModeNearest));
+    rb_define_const(rb_cObject, "TEXF_LINEAR", INT2NUM(SDL_ScaleModeLinear));
 
     rb_define_module_function(mWindow, "loop",             nx_window_loop,              0);
     rb_define_module_function(mWindow, "close",            nx_window_close,             0);
