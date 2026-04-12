@@ -1,7 +1,7 @@
 #pragma once
 #include <ruby.h>
 #include <stdbool.h>
-#include <SDL3/SDL.h>
+#include <SDL2/SDL.h>
 
 // モジュール登録用の初期化関数
 void nx_input_init(void);

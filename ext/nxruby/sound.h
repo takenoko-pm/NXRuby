@@ -1,11 +1,10 @@
 #pragma once
 #include <ruby.h>
-#include <SDL3_mixer/SDL_mixer.h>
+#include <SDL2/SDL_mixer.h>
 
-// Rubyの Sound オブジェクトが持つデータ (そのまま維持)
+// Rubyの Sound オブジェクトが持つデータ
 typedef struct {
-    MIX_Audio *audio;
-    MIX_Track *track;   
+    Mix_Chunk *chunk;
     int loop_count;
 } NxSound;
 

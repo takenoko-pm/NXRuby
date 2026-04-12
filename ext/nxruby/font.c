@@ -1,6 +1,6 @@
 #include <ruby.h>
-#include <SDL3/SDL.h>
-#include <SDL3_ttf/SDL_ttf.h>
+#include <SDL2/SDL.h>
+#include <SDL2_ttf/SDL_ttf.h>
 #include "font.h"
 
 // ================================================================================
@@ -44,10 +44,9 @@ static VALUE nx_font_initialize(VALUE self, VALUE rsize, VALUE rpath) {
 
     if (size <= 0) rb_raise(rb_eArgError, "Font size must be > 0");
 
-    // SDL3_ttf ではサイズに float を指定
-    TTF_Font* ttf_font = TTF_OpenFont(path, (float)size);
+    TTF_Font* ttf_font = TTF_OpenFont(path, size);
     if (!ttf_font) {
-        rb_raise(rb_eRuntimeError, "Failed to load font '%s': %s", path, SDL_GetError());
+        rb_raise(rb_eRuntimeError, "Failed to load font '%s': %s", path, TTF_GetError());
     }
 
     NxFont *font = ALLOC(NxFont);
@@ -92,8 +91,7 @@ static VALUE nx_font_get_width(VALUE self, VALUE rtext) {
     if (!font || !font->font) return INT2NUM(0);
 
     int w = 0, h = 0;
-    // 文字列描画時のサイズを計算 (null終端まで)
-    TTF_GetStringSize(font->font, text, 0, &w, &h);
+    TTF_SizeUTF8(font->font, text, &w, &h);
 
     return INT2NUM(w);
 }

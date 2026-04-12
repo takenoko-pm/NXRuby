@@ -1,15 +1,14 @@
-# .github/workflows/build.yml
-name: Build Native Gems
-on: [push]
+name: Compile Test
+on: [push, pull_request]
 
 jobs:
-  build:
+  test:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        # Windows, Mac(Apple Silicon), Mac(Intel)
-        os: [windows-latest, macos-latest, macos-15-intel]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
     steps:
       - uses: actions/checkout@v4
 
@@ -19,24 +18,19 @@ jobs:
           ruby-version: '3.4'
           bundler-cache: true
 
-      - name: Install Build Tools
-        run: gem install rake-compiler mini_portile2
+      # OSごとにSDL2をインストールする
+      - name: Install SDL2 (Ubuntu)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
 
-      - name: Install Windows Dependencies
+      - name: Install SDL2 (macOS)
+        if: runner.os == 'macOS'
+        run: brew install sdl2 sdl2_image sdl2_mixer sdl2_ttf
+
+      - name: Install SDL2 (Windows)
         if: runner.os == 'Windows'
-        run: ridk exec pacman -S --noconfirm mingw-w64-ucrt-x86_64-freetype mingw-w64-ucrt-x86_64-harfbuzz
+        run: ridk exec pacman -S --noconfirm mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-SDL2_image mingw-w64-ucrt-x86_64-SDL2_mixer mingw-w64-ucrt-x86_64-SDL2_ttf
 
+      # コンパイルが通るかテスト
       - name: Compile Extension
         run: rake compile
-
-      - name: Build Gem
-        run: gem build nxruby.gemspec
-        env:
-          NXRUBY_PRECOMPILED: "true"
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: gem-${{ matrix.os }}
-          path: "*.gem"
-          

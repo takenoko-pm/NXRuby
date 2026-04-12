@@ -1,6 +1,6 @@
 #include <ruby.h>
-#include <SDL3/SDL.h>
-#include <SDL3_image/SDL_image.h>
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
 #include "window.h"
 #include "image.h"
 
@@ -106,8 +106,10 @@ static VALUE nx_image_load(VALUE klass, VALUE rpath) {
     if (!texture) rb_raise(rb_eRuntimeError, "Failed to load image '%s': %s", path, SDL_GetError());
     SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
 
-    float w, h;
-    SDL_GetTextureSize(texture, &w, &h);
+    int iw, ih;
+    SDL_QueryTexture(texture, NULL, NULL, &iw, &ih);
+    float w = (float)iw;
+    float h = (float)ih;
 
     NxSharedTexture *shared = ALLOC(NxSharedTexture);
     shared->texture = texture;
@@ -134,8 +136,10 @@ static VALUE nx_image_load_tiles(VALUE klass, VALUE rpath, VALUE rxc, VALUE ryc)
     SDL_Texture *texture = IMG_LoadTexture(renderer, path);
     if (!texture) rb_raise(rb_eRuntimeError, "Failed to load image '%s': %s", path, SDL_GetError());
 
-    float tw, th;
-    SDL_GetTextureSize(texture, &tw, &th);
+    int itw, ith;
+    SDL_QueryTexture(texture, NULL, NULL, &itw, &ith);
+    float tw = (float)itw;
+    float th = (float)ith;
 
     NxSharedTexture *shared = ALLOC(NxSharedTexture);
     shared->texture = texture;
