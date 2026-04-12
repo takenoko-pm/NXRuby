@@ -1,6 +1,7 @@
 #include <ruby.h>
 #include <SDL.h>
 #include <SDL_ttf.h>
+#include "nxruby.h"
 #include "font.h"
 
 // ================================================================================
@@ -11,7 +12,8 @@
 static void nx_font_free(void *ptr) {
     if (!ptr) return;
     NxFont *font = (NxFont*)ptr;
-    if (font->font) {
+    
+    if (g_nxruby_initialized && font->font) {
         TTF_CloseFont(font->font);
     }
     ruby_xfree(font);

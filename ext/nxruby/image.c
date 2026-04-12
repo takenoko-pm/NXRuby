@@ -1,6 +1,7 @@
 #include <ruby.h>
 #include <SDL.h>
 #include <SDL_image.h>
+#include "nxruby.h"
 #include "window.h"
 #include "image.h"
 
@@ -16,7 +17,8 @@ static void nx_image_free(void *ptr) {
     if (img->shared_tex) {
         img->shared_tex->ref_count--;
         if (img->shared_tex->ref_count <= 0) {
-            if (img->shared_tex->texture) {
+            // 修正: SDLが生きている場合のみテクスチャを破棄
+            if (g_nxruby_initialized && img->shared_tex->texture) {
                 SDL_DestroyTexture(img->shared_tex->texture);
             }
             ruby_xfree(img->shared_tex);
@@ -216,6 +218,12 @@ static VALUE nx_image_alloc(VALUE klass) {
 // ================================================================================
 
 void nx_image_init(void) {
+    // SDL_imageの初期化 (PNGとJPGをサポート)
+    int img_flags = IMG_INIT_PNG | IMG_INIT_JPG;
+    if (!(IMG_Init(img_flags) & img_flags)) {
+        rb_raise(rb_eRuntimeError, "SDL_image initialization failed: %s", IMG_GetError());
+    }
+
     VALUE cImage = rb_define_class("Image", rb_cObject);
     // Data_Wrap_Struct を使うクラスに必要な指定
     rb_define_alloc_func(cImage, nx_image_alloc);

@@ -1,6 +1,7 @@
 #include <ruby.h>
 #include <SDL.h>
 #include <SDL_mixer.h>
+#include "nxruby.h"
 #include "sound.h"
 
 // ================================================================================
@@ -13,14 +14,15 @@ static void nx_sound_free(void *ptr) {
     NxSound *snd = (NxSound*)ptr;
     
     if (snd->chunk) {
-        // メモリ解放前に、もしこの音がどこかのチャンネルで鳴っていたら全て強制停止する
-        int num_channels = Mix_AllocateChannels(-1);
-        for (int i = 0; i < num_channels; i++) {
-            if (Mix_GetChunk(i) == snd->chunk) {
-                Mix_HaltChannel(i);
+        if (g_nxruby_initialized) {
+            int num_channels = Mix_AllocateChannels(-1);
+            for (int i = 0; i < num_channels; i++) {
+                if (Mix_GetChunk(i) == snd->chunk) {
+                    Mix_HaltChannel(i);
+                }
             }
+            Mix_FreeChunk(snd->chunk);
         }
-        Mix_FreeChunk(snd->chunk);
     }
     
     ruby_xfree(snd);

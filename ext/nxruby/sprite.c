@@ -42,14 +42,38 @@ static bool check_collision(VALUE val1, VALUE val2) {
 
     if (!img1 || !img2) return false;
 
-    float w1 = img1->width;
-    float h1 = img1->height;
-    float w2 = img2->width;
-    float h2 = img2->height;
+    // --- Sprite 1 の正確なAABB（軸平行境界箱）を計算 ---
+    float cx1 = s1->center_x_defined ? s1->center_x : (img1->width / 2.0f);
+    float cy1 = s1->center_y_defined ? s1->center_y : (img1->height / 2.0f);
+    
+    float base_x1 = s1->x + cx1 - (cx1 * s1->scale_x);
+    float base_y1 = s1->y + cy1 - (cy1 * s1->scale_y);
+    float sw1 = img1->width * s1->scale_x;
+    float sh1 = img1->height * s1->scale_y;
 
-    // AABB (矩形) 判定
-    return (s1->x < s2->x + w2) && (s1->x + w1 > s2->x) &&
-           (s1->y < s2->y + h2) && (s1->y + h1 > s2->y);
+    // マイナススケール（反転）を考慮して最小・最大を決定
+    float min_x1 = sw1 > 0 ? base_x1 : base_x1 + sw1;
+    float max_x1 = sw1 > 0 ? base_x1 + sw1 : base_x1;
+    float min_y1 = sh1 > 0 ? base_y1 : base_y1 + sh1;
+    float max_y1 = sh1 > 0 ? base_y1 + sh1 : base_y1;
+
+    // --- Sprite 2 の正確なAABBを計算 ---
+    float cx2 = s2->center_x_defined ? s2->center_x : (img2->width / 2.0f);
+    float cy2 = s2->center_y_defined ? s2->center_y : (img2->height / 2.0f);
+    
+    float base_x2 = s2->x + cx2 - (cx2 * s2->scale_x);
+    float base_y2 = s2->y + cy2 - (cy2 * s2->scale_y);
+    float sw2 = img2->width * s2->scale_x;
+    float sh2 = img2->height * s2->scale_y;
+
+    float min_x2 = sw2 > 0 ? base_x2 : base_x2 + sw2;
+    float max_x2 = sw2 > 0 ? base_x2 + sw2 : base_x2;
+    float min_y2 = sh2 > 0 ? base_y2 : base_y2 + sh2;
+    float max_y2 = sh2 > 0 ? base_y2 + sh2 : base_y2;
+
+    // 正確なAABB判定
+    return (min_x1 < max_x2) && (max_x1 > min_x2) &&
+           (min_y1 < max_y2) && (max_y1 > min_y2);
 }
 
 // --- 配列の中身のメソッドを全部呼ぶ ---
