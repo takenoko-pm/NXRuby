@@ -1,6 +1,6 @@
 #pragma once
 #include <ruby.h>
-#include <SDL2/SDL.h>
+#include <SDL.h>
 #include <stdbool.h>
 
 // モジュール登録用の初期化関数

@@ -1,6 +1,6 @@
 #pragma once
 #include <ruby.h>
-#include <SDL2_ttf/SDL_ttf.h>
+#include <SDL_ttf.h>
 
 // Rubyの Font オブジェクトが持つデータ
 typedef struct {

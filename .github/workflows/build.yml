@@ -34,5 +34,5 @@ jobs:
       # コンパイルが通るかテスト
       - name: Compile Extension
         run: |
-          gem install rake-compiler
+          gem install rake-compiler pkg-config
           rake compile

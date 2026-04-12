@@ -1,6 +1,6 @@
 #pragma once
 #include <ruby.h>
-#include <SDL2/SDL_mixer.h>
+#include <SDL_mixer.h>
 
 // Rubyの Sound オブジェクトが持つデータ
 typedef struct {

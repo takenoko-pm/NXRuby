@@ -1,6 +1,6 @@
 #pragma once
 #include <ruby.h>
-#include <SDL2/SDL.h>
+#include <SDL.h>
 
 // --- 共有テクスチャ管理用構造体 ---
 // 複数の Image オブジェクトで1つのテクスチャを使い回すための仕組み
