@@ -32,12 +32,16 @@ jobs:
         if: runner.os == 'Windows'
         run: ridk exec pacman -S --noconfirm mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-SDL2_image mingw-w64-ucrt-x86_64-SDL2_mixer mingw-w64-ucrt-x86_64-SDL2_ttf
 
-      - name: Compile Extension
-        shell: bash
+        # Windows以外のコンパイル (Ubuntu / macOS)
+      - name: Compile Extension (Linux/macOS)
+        if: runner.os != 'Windows'
         run: |
           gem install rake-compiler pkg-config
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            ridk exec rake compile
-          else
-            rake compile
-          fi
+          rake compile
+
+      # Windows用のコンパイル
+      - name: Compile Extension (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          gem install rake-compiler pkg-config
+          ridk exec rake compile
